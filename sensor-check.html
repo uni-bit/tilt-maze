@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>センサー動作確認</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 16px 40px;
+    background: #16181d; color: #e8eaf0;
+    font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+    text-align: center;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .lead { font-size: 13px; opacity: .65; margin: 0 0 20px; line-height: 1.6; }
+
+  button {
+    font-size: 17px; font-weight: 600;
+    padding: 15px 34px; border: none; border-radius: 10px;
+    background: #4a7ddb; color: #fff; cursor: pointer;
+  }
+  button:disabled { background: #3a3f4a; color: #888; }
+
+  #verdict {
+    margin: 20px auto 0; max-width: 420px;
+    padding: 16px; border-radius: 10px;
+    font-size: 16px; font-weight: 700; line-height: 1.6;
+    background: #23262e; border: 2px solid #3a3f4a;
+  }
+  #verdict.ok  { background: #16301f; border-color: #2f7d4f; color: #9fe8bb; }
+  #verdict.ng  { background: #341818; border-color: #9c3b3b; color: #ffb9b9; }
+  #verdict.act { background: #2a2410; border-color: #9c8330; color: #ffe6a0; }
+  #verdictSub { font-size: 13px; font-weight: 400; opacity: .9; margin-top: 8px; white-space: pre-wrap; }
+
+  #pad {
+    width: 240px; height: 240px; margin: 22px auto 0;
+    border: 2px solid #3a3f4a; border-radius: 12px;
+    background: #1c1f26; position: relative; overflow: hidden;
+  }
+  #dot {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #e8eaf0; position: absolute; left: 103px; top: 103px;
+  }
+  #pad .cross { position: absolute; background: #2b2f38; }
+  #pad .cross.h { left: 0; right: 0; top: 50%; height: 1px; }
+  #pad .cross.v { top: 0; bottom: 0; left: 50%; width: 1px; }
+  #arrow {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    font-size: 68px; color: #ffe6a0; opacity: .45;
+  }
+
+  table { margin: 22px auto 0; border-collapse: collapse; font-size: 14px; }
+  td { padding: 5px 12px; border-bottom: 1px solid #2b2f38; }
+  td.k { text-align: right; opacity: .6; }
+  td.v { text-align: left; font-family: ui-monospace, monospace; font-weight: 600; }
+
+  #result {
+    display: none; margin: 20px auto 0; max-width: 420px;
+    padding: 14px 16px; border-radius: 10px;
+    background: #1c1f26; border: 1px solid #3a3f4a;
+    font-family: ui-monospace, monospace; font-size: 14px;
+    text-align: left; line-height: 1.9;
+  }
+  #result b { color: #ffe6a0; font-size: 16px; }
+
+  #info {
+    margin: 24px auto 0; max-width: 460px; padding: 12px 14px;
+    background: #1c1f26; border: 1px solid #2b2f38; border-radius: 8px;
+    font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.7;
+    text-align: left; word-break: break-all; opacity: .75;
+  }
+  .shot { font-size: 13px; opacity: .7; margin-top: 18px; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<h1>センサー動作確認</h1>
+<p class="lead">スマホで開いて、下のボタンを押してください。<br>合宿の前に、自分の端末で動くか確かめます。</p>
+
+<button id="btn">確認をはじめる</button>
+
+<div id="verdict">
+  未確認
+  <div id="verdictSub">ボタンを押してください</div>
+</div>
+
+<div id="pad">
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+  <div id="dot"></div>
+  <div id="arrow"></div>
+</div>
+
+<table>
+  <tr><td class="k">gamma (生)</td><td class="v" id="vg">—</td></tr>
+  <tr><td class="k">beta (生)</td><td class="v" id="vb">—</td></tr>
+  <tr><td class="k">画面上の重力 x</td><td class="v" id="vx">—</td></tr>
+  <tr><td class="k">画面上の重力 y</td><td class="v" id="vy">—</td></tr>
+  <tr><td class="k">受信回数</td><td class="v" id="vc">0</td></tr>
+  <tr><td class="k">イベント種別</td><td class="v" id="vt">—</td></tr>
+</table>
+
+<div id="result"></div>
+
+<p class="shot">結果が出たら、この画面のスクリーンショットを<br>担当者に送ってください。</p>
+
+<div id="info"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var DEG = Math.PI / 180;
+  var THRESH = 0.20;          // 意図的な傾きとみなす閾値（約12°相当）
+
+  var btn     = document.getElementById("btn");
+  var verdict = document.getElementById("verdict");
+  var sub     = document.getElementById("verdictSub");
+  var dot     = document.getElementById("dot");
+  var arrow   = document.getElementById("arrow");
+  var result  = document.getElementById("result");
+  var vg = document.getElementById("vg"), vb = document.getElementById("vb");
+  var vx = document.getElementById("vx"), vy = document.getElementById("vy");
+  var vc = document.getElementById("vc"), vt = document.getElementById("vt");
+
+  var count = 0, nullSeen = false;
+  var baseX = null, baseY = null;
+  var phase = "idle";          // idle → calib → right → front → done
+  var signX = null, signY = null;
+  var calibAt = 0;
+
+  var DOE = window.DeviceOrientationEvent;
+  document.getElementById("info").textContent =
+    "URL       : " + location.protocol + "//" + location.host + "\n" +
+    "secure    : " + (window.isSecureContext ? "yes" : "NO") + "\n" +
+    "DOE       : " + (DOE ? "yes" : "NO") + "\n" +
+    "reqPerm   : " + (DOE && typeof DOE.requestPermission === "function" ? "yes (iOS)" : "no (Android等)") + "\n" +
+    "UA        : " + navigator.userAgent;
+
+  function say(cls, main, detail) {
+    verdict.className = cls;
+    verdict.firstChild.nodeValue = main;
+    sub.textContent = detail || "";
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  // 重力を画面平面に投影する。
+  // beta / gamma をそのまま使うと、端末が立ったとき (beta≈90) に
+  // gamma が -90 と 90 の間で飛ぶ。ここで cos(beta) が同時に 0 へ
+  // 潰れるため、この形にすると飛びが打ち消される。
+  function gravityOnScreen(beta, gamma) {
+    var b = beta * DEG, g = gamma * DEG;
+    return { x: Math.cos(b) * Math.sin(g), y: Math.sin(b) };
+  }
+
+  function showResult() {
+    var okDefault = (signX === 1 && signY === 1);
+    result.style.display = "block";
+    result.innerHTML =
+      "SIGN_X = <b>" + signX + "</b><br>" +
+      "SIGN_Y = <b>" + signY + "</b><br><br>" +
+      (okDefault
+        ? "engine.js の設定はこのままで正しく動きます。"
+        : "この端末では engine.js の SIGN_X / SIGN_Y を<br>上の値にする必要があります。");
+  }
+
+  function onEvent(e) {
+    vt.textContent = e.type;
+    if (e.beta === null || e.gamma === null) { nullSeen = true; return; }
+
+    count++;
+    vc.textContent = count;
+    vg.textContent = e.gamma.toFixed(1) + "°";
+    vb.textContent = e.beta.toFixed(1) + "°";
+
+    var v = gravityOnScreen(e.beta, e.gamma);
+    vx.textContent = v.x.toFixed(3);
+    vy.textContent = v.y.toFixed(3);
+
+    if (phase === "calib") {
+      baseX = v.x; baseY = v.y;
+      if (Date.now() - calibAt > 900) {
+        phase = "right";
+        arrow.style.display = "flex";
+        arrow.textContent = "→";
+        say("act", "① 右に傾けてください",
+            "端末の右側を下げます。\nゆっくりで構いません。");
+      }
+      return;
+    }
+
+    var dx = v.x - baseX, dy = v.y - baseY;
+
+    if (phase === "right") {
+      if (Math.abs(dx) > THRESH) {
+        signX = dx > 0 ? 1 : -1;
+        phase = "front";
+        arrow.textContent = "↓";
+        say("act", "② 手前に傾けてください",
+            "端末の手前側を下げます。\n自分の方に倒す向きです。");
+      }
+      return;
+    }
+
+    if (phase === "front") {
+      if (Math.abs(dy) > THRESH) {
+        signY = dy > 0 ? 1 : -1;
+        phase = "done";
+        arrow.style.display = "none";
+        say("ok", "✅ 正常に動作しています",
+            "白い丸が傾きに追従します。\n上下左右すべて動くか確かめてください。");
+        showResult();
+      }
+      return;
+    }
+
+    if (phase === "done") {
+      dot.style.left = (103 + clamp(signX * dx * 2.5, -1, 1) * 100) + "px";
+      dot.style.top  = (103 + clamp(signY * dy * 2.5, -1, 1) * 100) + "px";
+    }
+  }
+
+  function watchdog() {
+    setTimeout(function () {
+      if (count > 0) return;
+      if (nullSeen) {
+        say("ng", "❌ 値が取得できません",
+            "センサーは反応していますが、数値が届きません。\n" +
+            "端末の設定でモーションセンサーが\n制限されている可能性があります。");
+      } else {
+        say("ng", "❌ 値が届きません",
+            (window.isSecureContext ? "" : "このページは https:// で開かれていません。\nこれが原因の可能性が高いです。\n\n") +
+            "Android の場合、Chrome のサイト設定で\nモーションセンサーがブロックされていないか\n確認してください。");
+      }
+    }, 3000);
+  }
+
+  function begin() {
+    phase = "calib";
+    calibAt = Date.now();
+    say("act", "そのまま持っていてください", "1秒ほどで基準を取ります。");
+    watchdog();
+  }
+
+  btn.addEventListener("click", function () {
+    btn.disabled = true;
+    btn.textContent = "確認中…";
+
+    if (!DOE) {
+      say("ng", "❌ センサーがありません",
+          "この端末またはブラウザは傾きセンサーに\n対応していません。\n" +
+          "PCで開いた場合は、これが正常です。");
+      return;
+    }
+
+    if (typeof DOE.requestPermission === "function") {
+      DOE.requestPermission().then(function (res) {
+        if (res === "granted") {
+          window.addEventListener("deviceorientation", onEvent);
+          window.addEventListener("deviceorientationabsolute", onEvent);
+          begin();
+        } else {
+          say("ng", "❌ 許可されませんでした",
+              "「許可しない」を選ぶと再表示されません。\n" +
+              "Safariの設定 → このサイトのデータを削除、\n" +
+              "またはプライベートブラウズで開き直してください。");
+        }
+      }).catch(function (err) {
+        say("ng", "❌ 開始できませんでした",
+            String(err && err.message ? err.message : err) + "\n\n" +
+            "https:// で開いているか確認してください。");
+      });
+    } else {
+      window.addEventListener("deviceorientation", onEvent);
+      window.addEventListener("deviceorientationabsolute", onEvent);
+      begin();
+    }
+  });
+})();
+</script>
+</body>
+</html>
